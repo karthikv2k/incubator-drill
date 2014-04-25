@@ -51,25 +51,21 @@ public class KafkaSubScan extends AbstractBase implements SubScan {
   @JsonIgnore
   private final KafkaStoragePlugin kafkaStoragePlugin;
   private final List<KafkaSubScanReadEntry> rowGroupReadEntries;
-  private final List<SchemaPath> columns;
 
   @JsonCreator
   public KafkaSubScan(@JacksonInject StoragePluginRegistry registry, @JsonProperty("storage") StoragePluginConfig storage,
-                      @JsonProperty("rowGroupReadEntries") LinkedList<KafkaSubScanReadEntry> rowGroupReadEntries,
-                      @JsonProperty("columns") List<SchemaPath> columns) throws ExecutionSetupException {
+                      @JsonProperty("rowGroupReadEntries") LinkedList<KafkaSubScanReadEntry> rowGroupReadEntries)
+          throws ExecutionSetupException {
     kafkaStoragePlugin = (KafkaStoragePlugin) registry.getPlugin(storage);
     this.rowGroupReadEntries = rowGroupReadEntries;
     this.storage = storage;
-    this.columns = columns;
   }
 
   public KafkaSubScan(KafkaStoragePlugin plugin, KafkaStoragePluginConfig config,
-                      List<KafkaSubScanReadEntry> regionInfoList,
-                      List<SchemaPath> columns) {
+                      List<KafkaSubScanReadEntry> regionInfoList) {
     kafkaStoragePlugin = plugin;
     storage = config;
     this.rowGroupReadEntries = regionInfoList;
-    this.columns = columns;
   }
 
   public List<KafkaSubScanReadEntry> getRowGroupReadEntries() {
@@ -79,10 +75,6 @@ public class KafkaSubScan extends AbstractBase implements SubScan {
   @JsonIgnore
   public StoragePluginConfig getStorageConfig() {
     return storage;
-  }
-
-  public List<SchemaPath> getColumns() {
-    return columns;
   }
 
   @Override
@@ -113,7 +105,7 @@ public class KafkaSubScan extends AbstractBase implements SubScan {
   @Override
   public PhysicalOperator getNewWithChildren(List<PhysicalOperator> children) {
     Preconditions.checkArgument(children.isEmpty());
-    return new KafkaSubScan(kafkaStoragePlugin, (KafkaStoragePluginConfig) storage, rowGroupReadEntries, columns);
+    return new KafkaSubScan(kafkaStoragePlugin, (KafkaStoragePluginConfig) storage, rowGroupReadEntries);
   }
 
   @Override
@@ -123,29 +115,25 @@ public class KafkaSubScan extends AbstractBase implements SubScan {
 
   public static class KafkaSubScanReadEntry {
 
-    private String tableName;
-    private String startRow;
-    private String endRow;
+    public final String topic;
+      public final String groupID;
+      public final long relativeOffset;
+      public final long recordsToConsume;
+      public final long timeout;
 
     @parquet.org.codehaus.jackson.annotate.JsonCreator
-    public KafkaSubScanReadEntry(@JsonProperty("tableName") String tableName,
-                                 @JsonProperty("startRow") String startRow, @JsonProperty("endRow") String endRow) {
-      this.tableName = tableName;
-      this.startRow = startRow;
-      this.endRow = endRow;
+    public KafkaSubScanReadEntry(@JsonProperty("topic") String topic,
+                                 @JsonProperty("groupID") String groupID,
+                                 @JsonProperty("relativeOffset") long relativeOffset,
+                                 @JsonProperty("recordsToConsume") long recordsToConsume,
+                                 @JsonProperty("timeout") long timeout) {
+      this.topic = topic;
+      this.groupID = groupID;
+      this.relativeOffset = relativeOffset;
+      this.recordsToConsume = recordsToConsume;
+      this.timeout = timeout;
     }
 
-    public String getTableName() {
-      return tableName;
-    }
-
-    public String getStartRow() {
-      return startRow;
-    }
-
-    public String getEndRow() {
-      return endRow;
-    }
   }
 
 }

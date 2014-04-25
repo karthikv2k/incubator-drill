@@ -23,14 +23,22 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class KafkaTableReadEntry {
 
-  protected String tableName;
+    public final String topic;
+    public final String groupID;
+    public final long relativeOffset;
+    public final long recordsToConsume;
+    public final long timeout;
 
-  public String getTableName() {
-    return tableName;
-  }
-
-  @JsonCreator
-  public KafkaTableReadEntry(@JsonProperty("tableName") String tableName) {
-    this.tableName = tableName;
-  }
+    @parquet.org.codehaus.jackson.annotate.JsonCreator
+    public KafkaTableReadEntry(@JsonProperty("topic") String topic,
+                                 @JsonProperty("groupID") String groupID,
+                                 @JsonProperty("relativeOffset") long relativeOffset,
+                                 @JsonProperty("recordsToConsume") long recordsToConsume,
+                                 @JsonProperty("timeout") long timeout) {
+        this.topic = topic;
+        this.groupID = groupID;
+        this.relativeOffset = relativeOffset;
+        this.recordsToConsume = recordsToConsume;
+        this.timeout = timeout;
+    }
 }

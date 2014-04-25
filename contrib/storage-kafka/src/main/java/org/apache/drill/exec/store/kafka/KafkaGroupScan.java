@@ -60,75 +60,30 @@ public class KafkaGroupScan extends AbstractGroupScan {
     return this.storagePluginConfig;
   }
 
-  @JsonProperty
-  public List<SchemaPath> getColumns() {
-    return columns;
-  }
-
-  private String tableName;
+  private String topic;
   private KafkaStoragePlugin storagePlugin;
   private KafkaStoragePluginConfig storagePluginConfig;
-  private List<EndpointAffinity> endpointAffinities;
-  private List<SchemaPath> columns;
-
-  private NavigableMap<HRegionInfo,ServerName> regionsMap;
 
   @JsonCreator
   public KafkaGroupScan(@JsonProperty("entries") List<KafkaTableReadEntry> entries,
                           @JsonProperty("storage") KafkaStoragePluginConfig storagePluginConfig,
-                          @JsonProperty("columns") List<SchemaPath> columns,
                           @JacksonInject StoragePluginRegistry pluginRegistry
                            )throws IOException, ExecutionSetupException {
     Preconditions.checkArgument(entries.size() == 1);
     this.storagePlugin = (KafkaStoragePlugin) pluginRegistry.getPlugin(storagePluginConfig);
     this.storagePluginConfig = storagePluginConfig;
-    this.tableName = entries.get(0).getTableName();
-    this.columns = columns;
-    getRegionInfos();
+    this.topic = entries.get(0).topic;
   }
 
-  public KafkaGroupScan(String tableName, KafkaStoragePlugin storageEngine, List<SchemaPath> columns) throws IOException {
+  public KafkaGroupScan(String topic, KafkaStoragePlugin storageEngine) throws IOException {
     this.storagePlugin = storageEngine;
     this.storagePluginConfig = storageEngine.getConfig();
-    this.tableName = tableName;
-    this.columns = columns;
-    getRegionInfos();
-  }
-
-  protected void getRegionInfos() throws IOException {
-    logger.debug("Getting region locations");
-    HTable table = new HTable(storagePluginConfig.conf, tableName);
-    regionsMap = table.getRegionLocations();
-    regionsMap.values().iterator().next().getHostname();
-    table.close();
+    this.topic = topic;
   }
 
   @Override
   public List<EndpointAffinity> getOperatorAffinity() {
-    watch.reset();
-    watch.start();
-    Map<String, DrillbitEndpoint> endpointMap = new HashMap();
-    for (DrillbitEndpoint ep : storagePlugin.getContext().getBits()) {
-      endpointMap.put(ep.getAddress(), ep);
-    }
-
-    Map<DrillbitEndpoint, EndpointAffinity> affinityMap = new HashMap();
-
-    for (ServerName sn : regionsMap.values()) {
-      String host = sn.getHostname();
-      DrillbitEndpoint ep = endpointMap.get(host);
-      if (ep != null) {
-        EndpointAffinity affinity = affinityMap.get(ep);
-        if (affinity == null) {
-          affinityMap.put(ep, new EndpointAffinity(ep, 1));
-        } else {
-          affinity.addAffinity(1);
-        }
-      }
-    }
-    this.endpointAffinities = Lists.newArrayList(affinityMap.values());
-    logger.debug("Took {} ms to get operator affinity", watch.elapsed(TimeUnit.MILLISECONDS));
-    return this.endpointAffinities;
+    return new LinkedList<EndpointAffinity>();
   }
 
   /**
@@ -137,43 +92,17 @@ public class KafkaGroupScan extends AbstractGroupScan {
    */
   @Override
   public void applyAssignments(List<DrillbitEndpoint> incomingEndpoints) {
-    watch.reset();
-    watch.start();
-    Preconditions.checkArgument(incomingEndpoints.size() <= regionsMap.size(),
-        String.format("Incoming endpoints %d is greater than number of row groups %d", incomingEndpoints.size(), regionsMap.size()));
-    mappings = ArrayListMultimap.create();
-    ArrayListMultimap<String, Integer> incomingEndpointMap = ArrayListMultimap.create();
-    for (int i = 0; i < incomingEndpoints.size(); i++) {
-      incomingEndpointMap.put(incomingEndpoints.get(i).getAddress(), i);
-    }
-    Map<String, Iterator<Integer>> mapIterator = new HashMap();
-    for (String s : incomingEndpointMap.keySet()) {
-      Iterator<Integer> ints = Iterators.cycle(incomingEndpointMap.get(s));
-      mapIterator.put(s, ints);
-    }
-    Iterator<Integer> nullIterator = Iterators.cycle(incomingEndpointMap.values());
-    for (HRegionInfo regionInfo : regionsMap.keySet()) {
-      logger.debug("creating read entry. start key: {} end key: {}", Bytes.toStringBinary(regionInfo.getStartKey()), Bytes.toStringBinary(regionInfo.getEndKey()));
-        KafkaSubScan.KafkaSubScanReadEntry p = new KafkaSubScan.KafkaSubScanReadEntry(
-          tableName, Bytes.toStringBinary(regionInfo.getStartKey()), Bytes.toStringBinary(regionInfo.getEndKey()));
-      String host = regionsMap.get(regionInfo).getHostname();
-      Iterator<Integer> indexIterator = mapIterator.get(host);
-      if (indexIterator == null) {
-        indexIterator = nullIterator;
-      }
-      mappings.put(indexIterator.next(), p);
-    }
   }
 
   @Override
   public KafkaSubScan getSpecificScan(int minorFragmentId) {
-    return new KafkaSubScan(storagePlugin, storagePluginConfig, mappings.get(minorFragmentId), columns);
+    return new KafkaSubScan(storagePlugin, storagePluginConfig, mappings.get(minorFragmentId));
   }
 
 
   @Override
   public int getMaxParallelizationWidth() {
-    return regionsMap.size();
+    return 1;
   }
 
   @Override
